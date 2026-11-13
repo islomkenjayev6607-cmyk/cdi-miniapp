@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CDI Library</title>
+<script>
+  // Theme before first paint: Telegram puts its colours in the launch hash, so
+  // there is no light flash while telegram-web-app.js is still on its way.
+  (function () {
+    var d = null;
+    try {
+      var p = new URLSearchParams(location.hash.slice(1)).get("tgWebAppThemeParams");
+      var c = p && JSON.parse(p).bg_color;
+      if (c && /^#[0-9a-f]{6}$/i.test(c)) {
+        var n = parseInt(c.slice(1), 16);
+        d = .299 * (n >> 16) + .587 * (n >> 8 & 255) + .114 * (n & 255) < 120;
+      }
+    } catch (e) {}
+    window.__hashDark = d;
+    if (d === null) d = matchMedia("(prefers-color-scheme: dark)").matches;
+    if (d) document.documentElement.classList.add("dark");
+  })();
+</script>
+<!-- Not render-blocking: the page draws at once and picks Telegram up in tgInit(). -->
+<script src="https://telegram.org/js/telegram-web-app.js" async onload="window.tgInit && tgInit()"></script>
+<!-- Fonts are self-hosted subsets (webapp/fonts/, published next to index.html).
+     bricolage.woff2 = Bricolage Grotesque, opsz 12–96 × wght 700–800, letters A–Z a–z,
+     digits and  &!',-.?·–—’…  only. Any new display string must stay inside that set,
+     or re-fetch the subset (fonts.googleapis.com/css2?…&text=…). Be Vietnam Pro files
+     cover printable ASCII plus ·–—’… . -->
+<link rel="preload" href="fonts/bricolage.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/bvp-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  @font-face { font-family: "Bricolage Grotesque"; font-weight: 700 800; font-display: swap; src: url(fonts/bricolage.woff2) format("woff2"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 400; font-display: swap; src: url(fonts/bvp-400.woff2) format("woff2"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 500; font-display: swap; src: url(fonts/bvp-500.woff2) format("woff2"); }
+  @font-face { font-family: "Be Vietnam Pro"; font-weight: 600; font-display: swap; src: url(fonts/bvp-600.woff2) format("woff2"); }
+  :root {
+    --blue: #1F4E8C;
+    --blue-2: #2A5DA8;
+    --paper: #F4F2ED;
+    --surface: #FFFFFF;
+    --ink: #0F1720;
+    --ink-2: #5B6472;
+    --line: rgba(15, 23, 32, .08);
+    --amber: #F2B84B;
+    --ok: #1E9E62;       /* tick fills */
+    --ok-ink: #157A4B;   /* green text: 4.5:1 on paper, white and its own tint */
+    --sheet: #FFFFFF;
+    --scrim: rgba(8, 14, 24, .38);
+    --display: "Bricolage Grotesque", "Be Vietnam Pro", system-ui, sans-serif;
+    --text: "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+    --ease: cubic-bezier(.2, .8, .2, 1);
+    --ease-in: cubic-bezier(.4, 0, 1, 1);
+  }
+  :root.dark {
+    --paper: #0B111B;
+    --surface: #131B28;
+    --ink: #EEF1F5;
+    --ink-2: #8B95A5;
+    --line: rgba(255, 255, 255, .08);
+    --ok-ink: #4CC38A;
+    --sheet: #131B28;
+    --scrim: rgba(0, 0, 0, .55);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { scrollbar-gutter: stable; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.4 var(--text); -webkit-font-smoothing: antialiased; }
+  body { padding: 0 16px calc(28px + env(safe-area-inset-bottom)); overscroll-behavior-y: none; }
+  button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
+  svg { display: block; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* ── Header ─────────────────────────────── */
+  header { padding: 22px 2px 18px; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: var(--ink-2); grid-column: 1 / -1; }
+  .mark { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(160deg, var(--blue-2), var(--blue));
+    color: #fff; font: 800 10px/26px var(--display); text-align: center; letter-spacing: .02em; }
+  h1 { margin: 0; font: 800 44px/.92 var(--display); font-size: clamp(36px, 12.4vw, 44px); letter-spacing: -.035em; }
+  h1 small { display: block; font: 700 22px/1.1 var(--display); font-size: clamp(18px, 6.2vw, 22px); letter-spacing: -.02em; color: var(--ink-2); margin-top: 6px; }
+  .free { align-self: start; margin-top: 4px; font: 700 12px/1 var(--text); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--blue); background: rgba(31, 78, 140, .10); background: color-mix(in srgb, var(--blue) 10%, transparent); padding: 8px 10px; border-radius: 99px; }
+  .dark .free { color: #8FB4F0; background: rgba(143, 180, 240, .12); }
+
+  /* ── Tabs ───────────────────────────────── */
+  .tabs { position: sticky; top: 0; z-index: 3; margin: 0 -16px 16px; padding: 8px 16px 10px;
+    background: rgba(244, 242, 237, .96); background: color-mix(in srgb, var(--paper) 96%, transparent);
+    box-shadow: 0 1px 0 transparent; transition: box-shadow .2s; }
+  .dark .tabs { background: rgba(11, 17, 27, .96); background: color-mix(in srgb, var(--paper) 96%, transparent); }
+  .tabs.stuck { box-shadow: 0 1px 0 var(--line); }
+  .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border-radius: 14px; padding: 4px;
+    box-shadow: 0 0 0 1px var(--line); }
+  .seg .pill { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 10px; background: var(--ink);
+    transition: transform .35s var(--ease); }
+  .seg[data-k="v"] .pill { transform: translateX(100%); }
+  .seg button { position: relative; z-index: 1; padding: 12px 0; font-weight: 600; font-size: 14px; color: var(--ink-2); transition: color .25s; }
+  .seg button[aria-selected="true"] { color: var(--paper); }
+  .seg button span { font-weight: 400; }
+
+  /* ── Shelf ──────────────────────────────── */
+  .shelf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; }
+  .book { text-align: left; animation: rise .5s var(--ease) both; }
+  .book:active .cover { transform: scale(.96); }
+  .shelf.still .book { animation: none; }
+  .shelf.swap .book { animation: fade .16s ease both; animation-delay: 0s !important; }
+  .cover { position: relative; aspect-ratio: 3 / 4.1; border-radius: 4px 10px 10px 4px; overflow: hidden; color: #fff;
+    container-type: inline-size; background: var(--c); transition: transform .2s var(--ease);
+    box-shadow: 0 1px 1px rgba(0,0,0,.08), 0 8px 18px -8px rgba(15, 30, 60, .45); }
+  .dark .cover { box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 8px 18px -8px rgba(0,0,0,.7); }
+  .cover::before { /* spine */ content: ""; position: absolute; inset: 0 auto 0 0; width: 9px;
+    background: linear-gradient(90deg, rgba(0,0,0,.28), rgba(0,0,0,.06) 70%, rgba(255,255,255,.12)); }
+  .cover::after { /* light */ content: ""; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,.18), transparent 45%, rgba(0,0,0,.12)); pointer-events: none; }
+  .cover .top, .cover .num, .cover .got { z-index: 1; }
+  .cover .top { position: absolute; top: 10px; left: 16px; right: 10px; font: 700 9px/1.3 var(--text); font-size: clamp(7px, 8.6cqw, 9px);
+    letter-spacing: .1em; text-transform: uppercase; }
+  .cover .top span { opacity: .9; }
+  .cover .top::after { content: ""; display: block; width: 18px; height: 2px; margin-top: 5px; background: var(--amber); border-radius: 2px; }
+  .cover .num { position: absolute; left: 13px; bottom: 6px; font: 800 52px/.9 var(--display); font-size: clamp(44px, 46cqw, 64px); letter-spacing: -.05em; }
+  .cover .got { position: absolute; bottom: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.95);
+    color: var(--ok); display: grid; place-items: center; }
+  .meta { margin-top: 8px; font-weight: 600; font-size: 13px; line-height: 1.2; }
+  .meta small { display: block; font-weight: 500; font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .meta em, .head p em { font-style: normal; color: var(--ok-ink); font-weight: 600; }
+  .head p .prog { display: block; margin-top: 3px; }
+  :focus { outline: none; }
+  .sheet:focus-visible { outline: none; }
+  :focus-visible { outline: 2px solid var(--blue-2); outline-offset: 3px; border-radius: 12px; }
+  .dark :focus-visible { outline-color: #7FA8E8; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes fade { from { opacity: 0; } }
+
+  /* ── Sheet ──────────────────────────────── */
+  /* Closing is the resting state, so it carries the (quicker, accelerating) close timing. */
+  .scrim { position: fixed; inset: 0; z-index: 10; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .28s linear; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; margin-inline: auto; background: var(--sheet); border-radius: 22px 22px 0 0;
+    padding: 0 16px calc(20px + env(safe-area-inset-bottom)); transform: translateY(105%); visibility: hidden;
+    transition: transform .28s var(--ease-in), visibility 0s .28s;
+    max-height: 88vh; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; box-shadow: 0 -10px 40px rgba(0,0,0,.18); }
+  .tgv .sheet { max-height: calc(var(--tg-viewport-stable-height, 100vh) * .88); }
+  .sheet-top { position: sticky; top: 0; z-index: 1; background: var(--sheet); padding: 10px 16px 14px; margin: 0 -16px;
+    touch-action: none; transition: box-shadow .2s; }
+  .sheet.scrolled .sheet-top { box-shadow: 0 1px 0 var(--line); }
+  .open { overflow: hidden; }
+  .open .scrim { opacity: 1; pointer-events: auto; transition: opacity .42s var(--ease); }
+  .closing .scrim { pointer-events: auto; }
+  .open .sheet { transform: none; visibility: visible; transition: transform .42s var(--ease), visibility 0s; }
+  .grab { width: 36px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 14px; }
+  .dark .grab { background: rgba(255,255,255,.18); }
+  .head { display: flex; gap: 14px; align-items: center; }
+  .head .cover { width: 64px; flex: none; box-shadow: 0 1px 1px rgba(0,0,0,.08), 0 4px 10px -6px rgba(15,30,60,.45); }
+  .dark .head .cover { box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 4px 10px -6px rgba(0,0,0,.7); }
+  .head .cover .num { font-size: 30px; left: 12px; bottom: 4px; }
+  .head .cover .top, .head .cover .got { display: none; }
+  .head .hb { flex: 1; min-width: 0; }
+  .head .hrow { display: flex; align-items: center; gap: 10px; }
+  .head h2 { margin: 0; flex: 1; font: 800 26px/1 var(--display); letter-spacing: -.03em; }
+  .head p { margin: 5px 0 0; color: var(--ink-2); font-size: 13px; text-wrap: balance; }
+  .head p .nw { white-space: nowrap; }
+  .x { position: relative; flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--line); color: var(--ink-2); }
+  .x::before { content: ""; position: absolute; inset: -6px; border-radius: 50%; }  /* 44px target */
+
+  /* Rows share one set of columns (subgrid), so every row's buttons line up; older webviews size each row alone. */
+  .rows { display: grid; grid-template-columns: auto 1fr 1fr; column-gap: 8px; }
+  .row { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr 1fr; grid-template-columns: subgrid; align-items: center; gap: 8px;
+    padding: 10px 0; border-top: 1px solid var(--line); }
+  .row .t { font: 700 17px/1 var(--display); letter-spacing: -.01em; white-space: nowrap; padding-right: 4px; }
+  .act { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; height: 44px; padding: 0 12px; border-radius: 12px; font-weight: 600; font-size: 14px;
+    white-space: nowrap; background: rgba(31, 78, 140, .09); background: color-mix(in srgb, var(--blue) 9%, transparent); color: var(--blue);
+    transition: background .2s, color .2s, transform .15s, opacity .2s; }
+  .dark .act { background: rgba(143, 180, 240, .1); color: #A9C6F5; }
+  .act:active { transform: scale(.95); }
+  .act.done { background: rgba(30, 158, 98, .12); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-ink); }
+  .dark .act.done { background: rgba(76, 195, 138, .14); color: #4CC38A; }
+  .act.sending, .dark .act.sending { background: var(--blue); color: #fff; }
+  .act.none, .dark .act.none { background: transparent; color: var(--ink-2); opacity: .85; border: 1.5px dashed rgba(91, 100, 114, .35); cursor: default; }
+  .act.none:active { transform: none; }
+  .leaving .act { pointer-events: none; }
+  .leaving .act:not(.sending):not(.none) { opacity: .5; }
+  .act.pop { animation: pop .38s var(--ease); }
+  @keyframes pop { 40% { transform: scale(1.06); } }
+  .act .ico { width: 18px; height: 18px; flex: none; }
+
+  /* ── Toast ──────────────────────────────── */
+  .toast { position: fixed; left: 16px; right: 16px; top: calc(12px + env(safe-area-inset-top)); z-index: 20; margin-inline: auto; max-width: 488px;
+    display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: #0F1720; color: #F4F2ED;
+    transform: translateY(calc(-100% - 24px)); opacity: 0; visibility: hidden; pointer-events: none;
+    transition: transform .45s var(--ease), opacity .3s, visibility 0s .45s;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,.35); }
+  .dark .toast { background: #1C2636; color: #EEF1F5; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 12px 30px -10px rgba(0,0,0,.6); }
+  .toast.show { transform: none; opacity: 1; visibility: visible; transition-delay: 0s; }
+  .toast.show.tap { pointer-events: auto; cursor: pointer; }
+  .toast .tick { width: 32px; height: 32px; border-radius: 50%; background: var(--ok); display: grid; place-items: center; flex: none; }
+  .toast .tick path { stroke-dasharray: 20; stroke-dashoffset: 20; }
+  .toast.show .tick path { animation: draw .45s .15s var(--ease) forwards; }
+  .toast b { display: block; font: 700 15px/1.2 var(--display); }
+  .toast span { display: block; font-size: 12px; opacity: .7; text-wrap: balance; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .toast.bad .tick { background: var(--amber); }
+  .toast.bad .tick svg { display: none; }
+  .toast.bad .tick::after { content: "!"; font: 800 17px/1 var(--display); color: #0F1720; }
+  .spin { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+    animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 359px) {
+    header { padding: 16px 2px 14px; }
+    .act { padding: 0 8px; gap: 5px; font-size: 13.5px; }
+    .meta { font-size: 12px; letter-spacing: -.01em; white-space: nowrap; }  /* "Cambridge 21" on one line */
+  }
+  @media (min-width: 600px) {
+    body { max-width: 760px; margin-inline: auto; }
+    .shelf { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+    .sheet { max-width: 520px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .toast .tick path { stroke-dashoffset: 0; }
+    .spin { animation: spin 1.2s linear infinite !important; }  /* progress is essential motion */
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="mark">CDI</div>CDI Materials</div>
+  <h1><span id="total">322</span> papers<small>Cambridge &amp; Volumes</small></h1>
+  <div class="free">Free</div>
+</header>
+
+<div class="tabs" id="tabs">
+  <div class="seg" id="seg" data-k="c" role="tablist" aria-label="Shelf">
+    <div class="pill"></div>
+    <button data-k="c" id="tab-c" role="tab" aria-controls="shelf" aria-selected="true">Cambridge <span id="nc"></span></button>
+    <button data-k="v" id="tab-v" role="tab" aria-controls="shelf" aria-selected="false">Volumes <span id="nv"></span></button>
+  </div>
+</div>
+
+<main class="shelf" id="shelf" role="tabpanel" aria-labelledby="tab-c"></main>
+
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1" inert aria-hidden="true"></section>
+<div class="toast" id="toast" aria-hidden="true">
+  <div class="tick"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div><b>Sent to your chat</b><span id="toastSub"></span></div>
+</div>
+<div id="live" class="sr" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+const CATALOG = {"c":[{"n":21,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":20,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":19,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":18,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":17,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":16,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":15,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":14,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":13,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":12,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":11,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":10,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":9,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":8,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":7,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":6,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":5,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":4,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":3,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["r"]},{"n":3,"s":["r"]},{"n":4,"s":["r"]}]},{"n":2,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]},{"n":1,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]}]}],"v":[{"n":1,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l","r"]},{"n":9,"s":["l","r"]},{"n":10,"s":["l","r"]}]},{"n":2,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l","r"]},{"n":9,"s":["l","r"]},{"n":10,"s":["l","r"]}]},{"n":3,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l","r"]},{"n":9,"s":["l","r"]},{"n":10,"s":["l","r"]}]},{"n":4,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l","r"]},{"n":9,"s":["l","r"]},{"n":10,"s":["l","r"]}]},{"n":5,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l","r"]},{"n":9,"s":["l","r"]},{"n":10,"s":["l","r"]}]},{"n":6,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]}]},{"n":7,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l","r"]},{"n":9,"s":["r"]},{"n":10,"s":["r"]}]},{"n":8,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]}]},{"n":9,"tests":[{"n":1,"s":["l","r"]},{"n":2,"s":["l","r"]},{"n":3,"s":["l","r"]},{"n":4,"s":["l","r"]},{"n":5,"s":["l","r"]},{"n":6,"s":["l","r"]},{"n":7,"s":["l","r"]},{"n":8,"s":["l"]}]}]};
+const BOT = "CDI_Materials_bot";
+const $ = id => document.getElementById(id);
+
+// ── Telegram ──────────────────────────────────────
+// telegram-web-app.js loads async; until tgInit() runs, tg is null and every
+// path below works without it. inClient: running inside a Telegram client
+// (colours, BackButton, openTelegramLink). inTg: that, plus signed initData,
+// which is what the send endpoint needs.
+let tg = null, inClient = false, inTg = false;
+const HASH_TG = /[#&]tgWebApp(Version|Platform|Data)=/.test(location.hash);
+const tgv = v => { try { return !!tg && tg.isVersionAtLeast(v); } catch (e) { return false; } };
+const haptic = (k, v) => { if (inClient) try { tg.HapticFeedback[k](v); } catch (e) {} };
+// Raw client events, for the moments before the library has loaded (same wire format as telegram-web-app.js).
+const pe = (t, d) => {
+  if (!HASH_TG) return;
+  try {
+    const msg = JSON.stringify({ eventType: t, eventData: d || {} });
+    if (window.TelegramWebviewProxy) TelegramWebviewProxy.postEvent(t, JSON.stringify(d || {}));
+    else if (window.external && "notify" in window.external) window.external.notify(msg);
+    else if (parent !== window) parent.postMessage(msg, "*");
+  } catch (e) {}
+};
+
+const PAPER = { light: "#F4F2ED", dark: "#0B111B" };
+const DIMMED = { light: "#9A9B9C", dark: "#05080C" };  // paper under the open-sheet scrim
+const darkMQ = matchMedia("(prefers-color-scheme: dark)");
+let isDark = document.documentElement.classList.contains("dark");
+
+function setChrome(c) {
+  if (!inClient) return;
+  try { tgv("6.9") ? tg.setHeaderColor(c) : tg.setHeaderColor("bg_color"); } catch (e) {}
+  try { if (tgv("6.1")) tg.setBackgroundColor(c); } catch (e) {}
+  try { if (tgv("7.10")) tg.setBottomBarColor(c); } catch (e) {}
+}
+// Theme: follow Telegram (and its live light/dark switch), else the OS.
+function applyTheme() {
+  isDark = inClient ? tg.colorScheme === "dark" : (window.__hashDark ?? darkMQ.matches);
+  document.documentElement.classList.toggle("dark", isDark);
+  setChrome((current ? DIMMED : PAPER)[isDark ? "dark" : "light"]);
+}
+function tgInit() {
+  if (tg || !(window.Telegram && Telegram.WebApp)) return;
+  tg = Telegram.WebApp;
+  inClient = !!(tg.platform && tg.platform !== "unknown");
+  inTg = inClient && !!tg.initData;
+  if (!inClient) return;
+  document.documentElement.classList.add("tgv");
+  tg.ready(); tg.expand();
+  tg.onEvent("themeChanged", applyTheme);
+  applyTheme();
+  if (current) sheetChrome(true);  // a book was opened before the library arrived
+}
+try { darkMQ.addEventListener("change", () => { if (!inClient) { window.__hashDark = null; applyTheme(); } }); } catch (e) {}
+
+const ICON = {
+  l: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="5" height="7" rx="2"/><rect x="16" y="14" width="5" height="7" rx="2"/></svg>',
+  r: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-2-1.5-5-2-8-1.5v14c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-14c-3-.5-6 0-8 1.5z"/><path d="M12 6v14"/></svg>',
+  ok: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  dot: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+};
+const LABEL = { c: "Cambridge", v: "Volume" };
+const SKILL = { l: "Listening", r: "Reading" };
+
+// Per-device memory: papers already received, the last tab, where to resume.
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const got = store.get("cdi-got", {});
+const save = () => store.set("cdi-got", got);
+
+// Each book gets its own shade: Cambridge runs light→deep brand blue, Volumes run ink-navy.
+function shade(kind, n, max) {
+  const t = max > 1 ? (n - 1) / (max - 1) : 0;
+  if (kind === "c") return `linear-gradient(165deg, hsl(${214 - t * 6} ${58 + t * 8}% ${44 - t * 16}%), hsl(${218 - t * 4} ${62 + t * 6}% ${33 - t * 13}%))`;
+  return `linear-gradient(165deg, hsl(${222 + t * 10} 38% ${30 - t * 8}%), hsl(${226 + t * 8} 44% ${18 - t * 5}%))`;
+}
+const MAX = { c: Math.max(...CATALOG.c.map(b => b.n)), v: Math.max(...CATALOG.v.map(b => b.n)) };
+const papers = (kind, b) => b.tests.flatMap(t => t.s.map(s => `${kind}${b.n}${s}${t.n}`));
+const sentIn = (kind, b) => papers(kind, b).filter(id => got[id]).length;
+// "c19l2" → { k: "c", n: 19, s: "l", t: 2, title: "Cambridge 19 · Listening Test 2" }
+function parseId(id) {
+  const m = /^([cv])(\d+)([lr])(\d+)$/.exec(id);
+  return m && { k: m[1], n: +m[2], s: m[3], t: +m[4], title: `${LABEL[m[1]]} ${m[2]} · ${SKILL[m[3]]} Test ${m[4]}` };
+}
+const what = p => p.title + (p.s === "l" ? " · PDF + audio" : " · PDF");
+
+$("total").textContent = ["c", "v"].reduce((a, k) => a + CATALOG[k].reduce((x, b) => x + papers(k, b).length, 0), 0);
+$("nc").textContent = CATALOG.c.length;
+$("nv").textContent = CATALOG.v.length;
+
+function cover(kind, b) {
+  return `<div class="cover" style="--c:${shade(kind, b.n, MAX[kind])}" aria-hidden="true">
+    <div class="top"><span>IELTS ${LABEL[kind]}</span></div>
+    <div class="num">${b.n}</div>${sentIn(kind, b) ? `<div class="got">${ICON.dot}</div>` : ""}</div>`;
+}
+function tileMeta(kind, b) {
+  const n = sentIn(kind, b), all = papers(kind, b).length;
+  return `${LABEL[kind]} ${b.n}<small>${n ? `<em>${n} of ${all} sent</em>` : `${b.tests.length} tests`}</small>`;
+}
+function tileName(kind, b) {
+  const n = sentIn(kind, b), all = papers(kind, b).length;
+  return `${LABEL[kind]} ${b.n}, ${b.tests.length} tests` + (n ? `, ${n} of ${all} sent` : "");
+}
+
+// ── Shelf ─────────────────────────────────────────
+let kind = store.get("cdi-tab", "c") === "v" ? "v" : "c";
+
+// mode: "rise" (first open), "swap" (tab switch: quick fade) or false (no animation).
+function render(mode = "rise") {
+  const shelf = $("shelf");
+  shelf.innerHTML = "";
+  shelf.classList.toggle("still", !mode);
+  shelf.classList.toggle("swap", mode === "swap");
+  CATALOG[kind].forEach((b, i) => {
+    const el = document.createElement("button");
+    el.className = "book";
+    el.dataset.n = b.n;
+    if (mode === "rise") el.style.animationDelay = `${Math.min(i, 5) * 30}ms`;
+    el.setAttribute("aria-label", tileName(kind, b));
+    el.innerHTML = `${cover(kind, b)}<div class="meta">${tileMeta(kind, b)}</div>`;
+    el.onclick = () => openBook(b, el);
+    shelf.append(el);
+  });
+}
+
+function refreshTile(k, b) {
+  if (k !== kind) return;  // the other shelf re-renders from got[] when shown
+  const el = $("shelf").querySelector(`.book[data-n="${b.n}"]`);
+  if (!el) return;
+  el.querySelector(".cover").outerHTML = cover(k, b);
+  el.querySelector(".meta").innerHTML = tileMeta(k, b);
+  el.setAttribute("aria-label", tileName(k, b));
+}
+
+function paintTabs() {
+  $("seg").dataset.k = kind;
+  document.querySelectorAll(".seg button").forEach(x => {
+    const on = x.dataset.k === kind;
+    x.setAttribute("aria-selected", on);
+    x.tabIndex = on ? 0 : -1;
+  });
+  $("shelf").setAttribute("aria-labelledby", `tab-${kind}`);
+}
+function setTab(k) {
+  if (k === kind) return;
+  haptic("selectionChanged");
+  kind = k; store.set("cdi-tab", k);
+  paintTabs();
+  render("swap");
+  // Start the new shelf at its top, but keep the tabs pinned under the thumb.
+  const pin = $("tabs").offsetTop;
+  if (scrollY > pin) scrollTo({ top: pin });
+}
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => setTab(b.dataset.k));
+$("seg").onkeydown = e => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  e.preventDefault();
+  setTab(kind === "c" ? "v" : "c");
+  $(`tab-${kind}`).focus();
+};
+paintTabs();
+
+// Hairline under the tabs once they are pinned.
+(() => {
+  const tabs = $("tabs"), hdr = document.querySelector("header");
+  const upd = () => tabs.classList.toggle("stuck", scrollY > hdr.offsetHeight + 1);
+  addEventListener("scroll", upd, { passive: true });
+  upd();
+})();
+
+// Swipe sideways on the shelf to switch shelves.
+(() => {
+  let x0 = null, y0 = 0;
+  const shelf = $("shelf");
+  shelf.addEventListener("touchstart", e => {
+    if (e.touches.length > 1) { x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+  shelf.addEventListener("touchcancel", () => { x0 = null; }, { passive: true });
+  shelf.addEventListener("touchend", e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > 2 * Math.abs(dy)) setTab(dx < 0 ? "v" : "c");
+  }, { passive: true });
+})();
+
+// ── Sheet ─────────────────────────────────────────
+let current = null;  // { k, b, opener }
+const behind = () => [document.querySelector("header"), $("tabs"), $("shelf")];
+
+function subtitle(k, b) {
+  const skills = new Set(b.tests.flatMap(t => t.s));
+  const all = papers(k, b).length, n = sentIn(k, b);
+  const which = skills.size === 2 ? "Listening &amp; Reading" : SKILL[[...skills][0]];
+  return `${b.tests.length} tests · <span class="nw">${which}</span>` + (n ? `<em class="prog">${n} of ${all} sent</em>` : "");
+}
+
+function sheetChrome(open) {
+  if (!inClient) return;
+  try { open ? (tg.BackButton.show(), tg.BackButton.onClick(closeBook)) : (tg.BackButton.hide(), tg.BackButton.offClick(closeBook)); } catch (e) {}
+  try { if (tgv("7.7")) open ? tg.disableVerticalSwipes() : tg.enableVerticalSwipes(); } catch (e) {}
+  if (open) try { tg.expand(); } catch (e) {}  // the sheet anchors to the bottom edge: make sure it is on screen
+  setChrome((open ? DIMMED : PAPER)[isDark ? "dark" : "light"]);
+}
+
+// Paints one Send button from state: in flight, handing off to the chat, sent, or idle.
+const inflight = new Set();
+let leaving = null;  // id being handed to the chat via the deep link
+function paintAct(btn) {
+  const { id, s, t } = btn.dataset;
+  const busy = inflight.has(id) ? "Sending" : leaving === id ? "Opening" : "";
+  btn.className = "act" + (busy ? " sending" : got[id] ? " done" : "");
+  btn.innerHTML = busy ? `<span class="spin"></span>${busy}` : `${got[id] ? ICON.ok : ICON[s]}${SKILL[s]}`;
+  btn.setAttribute("aria-label", busy ? `${busy} ${SKILL[s]} Test ${t}` : `Send ${SKILL[s]} Test ${t}` + (got[id] ? " again" : ""));
+  if (busy) btn.setAttribute("aria-busy", "true"); else btn.removeAttribute("aria-busy");
+}
+const liveAct = id => $("sheet").querySelector(`.act[data-id="${id}"]`);
+const repaint = id => { const b = liveAct(id); if (b) paintAct(b); return b; };
+
+function openBook(b, opener) {
+  haptic("impactOccurred", "light");
+  const k = kind;
+  current = { k, b, opener };
+  const sheet = $("sheet");
+  sheet.setAttribute("aria-label", `${LABEL[k]} ${b.n}`);
+  sheet.innerHTML = `<div class="sheet-top"><div class="grab"></div>
+    <div class="head">${cover(k, b)}
+      <div class="hb"><div class="hrow"><h2>${LABEL[k]} ${b.n}</h2><button class="x" aria-label="Close">${ICON.x}</button></div>
+      <p id="sub">${subtitle(k, b)}</p></div></div></div>`;
+  sheet.querySelector(".x").onclick = closeBook;
+  const list = document.createElement("div");
+  list.className = "rows";
+  for (const t of b.tests) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<div class="t">Test ${t.n}</div>`;
+    for (const s of ["l", "r"]) {
+      const btn = document.createElement("button");
+      if (!t.s.includes(s)) {
+        btn.className = "act none";
+        btn.disabled = true;
+        btn.innerHTML = `${ICON[s]}${SKILL[s]}`;
+        btn.setAttribute("aria-label", `${SKILL[s]} Test ${t.n} is not available`);
+      } else {
+        const id = `${k}${b.n}${s}${t.n}`;
+        Object.assign(btn.dataset, { id, s, t: t.n });
+        paintAct(btn);
+        btn.onclick = () => send(id);
+      }
+      row.append(btn);
+    }
+    list.append(row);
+  }
+  sheet.append(list);
+  sheet.scrollTop = 0;
+  sheet.classList.remove("scrolled");
+  sheet.style.transition = ""; sheet.style.transform = "";
+  clearTimeout(closeBook.t);
+  document.body.classList.remove("closing");
+  sheet.inert = false; sheet.removeAttribute("aria-hidden");
+  for (const el of behind()) el.inert = true;
+  // Hiding the page scroll must not shift the shelf where scrollbars take up width (Telegram Desktop).
+  const root = document.documentElement, w0 = root.clientWidth;
+  document.body.classList.add("open");
+  const gap = root.clientWidth - w0;
+  if (gap > 0) root.style.paddingRight = `${gap}px`;
+  sheetChrome(true);
+  setTimeout(() => sheet.focus({ preventScroll: true }), 50);
+}
+
+function closeBook() {
+  if (!current) return;
+  const { opener } = current;
+  current = null;
+  const sheet = $("sheet");
+  sheet.style.transition = ""; sheet.style.transform = ""; $("scrim").style.opacity = "";
+  // Keep taps on the scrim until the sheet is gone, so a double tap cannot hit a book underneath.
+  document.body.classList.add("closing");
+  clearTimeout(closeBook.t);
+  closeBook.t = setTimeout(() => document.body.classList.remove("closing"), 280);
+  document.body.classList.remove("open");
+  document.documentElement.style.paddingRight = "";
+  sheet.inert = true; sheet.setAttribute("aria-hidden", "true");
+  for (const el of behind()) el.inert = false;
+  sheetChrome(false);
+  if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+}
+$("scrim").onclick = closeBook;
+$("sheet").addEventListener("scroll", e => e.target.classList.toggle("scrolled", e.target.scrollTop > 4), { passive: true });
+addEventListener("keydown", e => { if (e.key === "Escape") closeBook(); });
+
+// Drag the sheet down to dismiss (from the handle/header, or anywhere when scrolled to top).
+// 8px of slop and a vertical lock, so taps and sideways moves never nudge it.
+(() => {
+  const sheet = $("sheet"), SLOP = 8;
+  let y0 = null, x0 = 0, dy = 0, dragging = false, lastY = 0, lastT = 0, prevY = 0, prevT = 0;
+  const reset = () => { y0 = null; dragging = false; sheet.style.transition = ""; $("scrim").style.opacity = ""; };
+  sheet.addEventListener("touchstart", e => {
+    if (e.touches.length > 1 || (sheet.scrollTop > 0 && !e.target.closest(".sheet-top"))) { y0 = null; return; }
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; dy = 0; dragging = false;
+    prevY = lastY = y0; prevT = lastT = performance.now();
+  }, { passive: true });
+  sheet.addEventListener("touchmove", e => {
+    if (y0 === null) return;
+    const y = e.touches[0].clientY, ry = y - y0, rx = e.touches[0].clientX - x0;
+    if (!dragging) {
+      if (Math.abs(rx) > SLOP && Math.abs(rx) > ry) { y0 = null; return; }  // sideways: not ours
+      if (ry < SLOP) return;
+      dragging = true; y0 += SLOP;
+    }
+    prevY = lastY; prevT = lastT; lastY = y; lastT = performance.now();
+    dy = Math.max(0, y - y0);
+    e.preventDefault();
+    sheet.style.transition = "none";
+    sheet.style.transform = `translateY(${dy}px)`;
+    $("scrim").style.opacity = Math.max(0, 1 - dy / 400);
+  }, { passive: false });
+  sheet.addEventListener("touchend", () => {
+    if (y0 === null) return;
+    const was = dragging, v = (lastY - prevY) / Math.max(1, lastT - prevT);  // px/ms at release
+    reset();
+    if (!was) return;
+    if (dy > 140 || (v > 0.5 && dy > 40)) closeBook();
+    else sheet.style.transform = "";
+  });
+  // iOS cancels the gesture for Control Center, notifications, call banners.
+  sheet.addEventListener("touchcancel", () => {
+    if (y0 === null) return;
+    reset(); sheet.style.transform = "";
+  });
+})();
+
+// ── Sending ───────────────────────────────────────
+// Send endpoint inside the bot (see handlers/library_api.py), passed by the bot as ?api=…
+// Only a Railway address is accepted: initData must never go anywhere else.
+const API = (() => {
+  const a = new URLSearchParams(location.search).get("api") || "";
+  return /^https:\/\/[a-z0-9-]+\.up\.railway\.app$/.test(a) ? a : "";
+})();
+
+function toast(title, sub, bad, onTap) {
+  const t = $("toast");
+  t.classList.remove("show", "bad", "tap");
+  void t.offsetWidth;  // restart the tick animation
+  t.querySelector("b").textContent = title;
+  $("toastSub").textContent = sub;
+  t.classList.toggle("bad", !!bad);
+  t.classList.toggle("tap", !!onTap);
+  t.onclick = onTap || null;
+  t.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("show"), onTap ? 6000 : 2800);
+  // The visual toast is aria-hidden; screen readers hear it through the live region.
+  const live = $("live");
+  live.textContent = "";
+  setTimeout(() => { live.textContent = `${title}. ${sub}`; }, 50);
+}
+
+// Marks a paper as received and refreshes wherever it shows: its shelf tile and,
+// if that book is open, the sheet subtitle. Works after the sheet closed or moved on.
+function recordSent(id) {
+  got[id] = 1; save();
+  const p = parseId(id);
+  const b = p && CATALOG[p.k].find(x => x.n === p.n);
+  if (!b) return;
+  refreshTile(p.k, b);
+  if (current && current.k === p.k && current.b.n === p.n) $("sub").innerHTML = subtitle(p.k, b);
+}
+
+function markDone(id) {
+  recordSent(id);
+  const btn = repaint(id);
+  if (btn) { void btn.offsetWidth; btn.classList.add("pop"); }
+}
+
+// Remember the open book, so reopening the library after the chat lands back on it.
+function saveResume() {
+  store.set("cdi-resume", { k: current ? current.k : kind, n: current ? current.b.n : null, y: scrollY, t: Date.now() });
+}
+
+// Fallback: open the chat with /start lib_<id>; the bot answers there.
+// first: the bot has never been started, so the chat opens on its START screen.
+function viaChat(id, first) {
+  if (leaving) return;
+  const p = parseId(id);
+  leaving = id;
+  document.body.classList.add("leaving");
+  repaint(id);
+  if (first) toast("Tap START in the chat", "Your paper arrives right after.");
+  else toast("Opening your chat", what(p));
+  const path = `/${BOT}?start=lib_${id}`, link = "https://t.me" + path;
+  setTimeout(() => {
+    if (inClient) {
+      // Inside Telegram the bot delivers as soon as the link opens (unless START is still needed).
+      if (!first) recordSent(id);
+      saveResume();
+      tg.openTelegramLink(link);
+      setTimeout(() => { try { tg.close(); } catch (e) {} }, 250);
+    } else if (HASH_TG) {  // in Telegram, but its script never arrived
+      saveResume();
+      pe("web_app_open_tg_link", { path_full: path });
+      setTimeout(() => pe("web_app_close"), 250);
+    } else location.href = link;
+  }, first ? 1600 : 900);
+  // If the app is still here (close ignored, or the browser came back), make it usable again.
+  clearTimeout(viaChat.t);
+  viaChat.t = setTimeout(endLeaving, 3500);
+}
+function endLeaving() {
+  const id = leaving;
+  leaving = null;
+  document.body.classList.remove("leaving");
+  if (id) repaint(id);
+}
+addEventListener("pageshow", e => { if (e.persisted) endLeaving(); });
+
+async function send(id) {
+  if (inflight.has(id) || leaving) return;
+  const p = parseId(id);
+  if (!p) return;
+  haptic("impactOccurred", "medium");
+  if (!API || !inTg) return viaChat(id);
+  inflight.add(id); repaint(id);
+  let r = null, body = {}, timedOut = false;
+  const ctl = new AbortController();
+  const tm = setTimeout(() => { timedOut = true; ctl.abort(); }, 8000);
+  try {
+    // text/plain keeps this a "simple" request: no CORS preflight round trip.
+    r = await fetch(API + "/send", {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify({ initData: tg.initData, id }), signal: ctl.signal,
+    });
+    if (r.ok) body = await r.json().catch(() => ({}));
+  } catch (e) {} finally { clearTimeout(tm); }
+  inflight.delete(id);
+  const status = r ? r.status : 0;
+  if (r && r.ok && !body.partial) {
+    haptic("notificationOccurred", "success");
+    markDone(id);
+    toast("Sent to your chat", what(p));
+    return;
+  }
+  repaint(id);
+  haptic("notificationOccurred", "warning");
+  if (r && r.ok) toast("Audio didn't arrive", "The paper is in your chat. Tap again for the audio.", true);
+  else if (status === 429) toast("Slow down a little", "You can take more tests in a few minutes.", true);
+  else if (status === 404) toast("Not available yet", "Try another test.", true);
+  else if (status === 401) toast("Session expired", "Tap here to reopen the library.", true, () => { try { tg.close(); } catch (e) {} });
+  else if (status === 403) viaChat(id, true);  // bot never started: the deep link fixes that
+  else if (timedOut) toast("Taking a while", "Check your chat in a moment before trying again.", true);
+  else viaChat(id);  // network error or endpoint down: nothing was sent, the deep link delivers
+}
+
+// ── Start ─────────────────────────────────────────
+if (window.Telegram) tgInit();
+else { pe("web_app_ready"); pe("web_app_expand"); }  // hide Telegram's loader without waiting for the script
+applyTheme();
+
+// Back from the deep link? Land on the same book and scroll position.
+function resumeBook() {
+  const r = store.get("cdi-resume", null);
+  store.del("cdi-resume");
+  if (!r || !(Date.now() - r.t < 600000) || (r.k !== "c" && r.k !== "v")) return false;
+  kind = r.k; paintTabs();
+  render(false);
+  scrollTo(0, r.y || 0);
+  const b = CATALOG[kind].find(x => x.n === r.n);
+  if (b) openBook(b, $("shelf").querySelector(`.book[data-n="${b.n}"]`));
+  return true;
+}
+if (!resumeBook()) render();
+</script>
+</body>
+</html>
